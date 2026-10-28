@@ -69,11 +69,11 @@ fun FingerprintDialog(
     }
 
     val descripcion = when (estado) {
-        EstadoHuella.Lista -> "Confirma ${tipo.titulo.lowercase()} en el lector de huellas del celular."
+        EstadoHuella.Lista -> "Coloca tu dedo en el lector de huellas del teléfono (botón lateral o pantalla, según el modelo)."
         EstadoHuella.SinRegistrar -> "Configura una huella en los ajustes de seguridad de Android."
         EstadoHuella.SinSensor -> "Este celular no declara sensor de huella digital. No se puede marcar."
-        EstadoHuella.NoDisponible -> "Huella fuerte no disponible. Si el celular también tiene rostro o iris, " +
-            "MarcApp bloquea la marcación porque Android no permite seleccionar únicamente huella."
+        EstadoHuella.NoDisponible -> "El sensor o la biometría fuerte no están disponibles ahora. " +
+            "Comprueba la configuración de huellas en los ajustes de Android."
     }
 
     AlertDialog(
@@ -88,6 +88,7 @@ fun FingerprintDialog(
                 Text("Acción: ${tipo.titulo}")
                 Text(descripcion)
                 if (mensaje.isNotEmpty()) Text(mensaje, color = C.Secundario)
+                Text("En Redmi 13, el lector está en el botón lateral de encendido.", color = C.Secundario)
                 Text("Android gestiona la huella; MarcApp no la almacena.", color = C.Secundario)
             }
         },

@@ -10,12 +10,15 @@ import androidx.fragment.app.FragmentActivity
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Restricción conservadora: usar biometría fuerte solo en teléfonos que
- * declaren un sensor de huella y NO declaren sensores de rostro/iris.
+ * Verificación para marcaciones MarcApp (modo DEMO).
  *
- * BiometricPrompt no permite forzar la modalidad 'huella' por API pública.
- * Por seguridad, MarcApp NO marca en equipos multimodales. No hay PIN.
- * No es una prueba de identidad del empleado ni una prueba criptográfica.
+ * Comprueba que el dispositivo declare sensor de huellas y exige autenticación
+ * biométrica FUERTE (Class 3). No ofrece PIN/patrón/contraseña como sustituto.
+ *
+ * IMPORTANTE: Android BiometricPrompt NO permite seleccionar por API pública
+ * únicamente el sensor de huellas. Un equipo con rostro FUERTE podría ofrecerlo.
+ * En Redmi 13, Xiaomi documenta lector lateral y desbloqueo facial por IA.
+ * No equivale a verificar la identidad del trabajador en el servidor.
  */
 sealed interface EstadoHuella {
     data object Lista : EstadoHuella
@@ -50,18 +53,11 @@ class AndroidVerificadorHuella(private val contexto: Context) : VerificadorHuell
         }
     }
 
-    private fun dispositivoSoloHuella(): Boolean {
-        val paquetes = contexto.packageManager
-        return paquetes.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT) &&
-            !paquetes.hasSystemFeature("android.hardware.biometrics.face") &&
-            !paquetes.hasSystemFeature("android.hardware.biometrics.iris")
-    }
-
     override fun estado(): EstadoHuella {
-        if (!dispositivoSoloHuella()) {
-            return if (contexto.packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) {
-                EstadoHuella.NoDisponible // Rostro/iris también presentes: no podemos forzar huella.
-            } else EstadoHuella.SinSensor
+        // El Redmi 13 sí dispone de lector lateral. No bloquear por la presencia
+        // de desbloqueo facial básico: únicamente aceptamos biometría FUERTE.
+        if (!contexto.packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) {
+            return EstadoHuella.SinSensor
         }
         if (actividadActual() == null) return EstadoHuella.NoDisponible
         return when (
@@ -80,7 +76,7 @@ class AndroidVerificadorHuella(private val contexto: Context) : VerificadorHuell
         val actividad = actividadActual()
         if (actividad == null || estado() != EstadoHuella.Lista) {
             onResultado(ResultadoHuella.Error(
-                "No hay huella fuerte compatible o el teléfono también admite rostro/iris."
+                "Necesitas un sensor de huellas y una biometría fuerte registrada para continuar."
             ))
             return {}
         }
