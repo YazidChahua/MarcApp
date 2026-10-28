@@ -5,12 +5,7 @@ plugins {
 
 android {
     namespace = "com.marcapp.app"
-    compileSdk {
-    version = release(37) {
-        minorApiLevel = 0
-        }
-    }
-
+    compileSdk { version = release(37) }
     defaultConfig {
         applicationId = "com.marcapp.app"
         minSdk = 26
@@ -36,11 +31,14 @@ android {
 }
 
 dependencies {
-    implementation(libs.material)
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
     implementation(composeBom)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.material) // Temas XML existentes en el proyecto
     implementation("androidx.activity:activity-compose:1.13.0")
+    implementation("androidx.biometric:biometric:1.1.0") // BiometricPrompt
+    implementation("androidx.fragment:fragment-ktx:1.8.9") // FragmentActivity
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.foundation:foundation-layout")

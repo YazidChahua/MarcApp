@@ -21,13 +21,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.marcapp.app.core.biometric.AndroidVerificadorHuella
 import com.marcapp.app.core.biometric.EstadoHuella
 import com.marcapp.app.core.biometric.ResultadoHuella
 import com.marcapp.app.core.designsystem.MarcAppColors as C
 import com.marcapp.app.domain.model.TipoMarca
 
-/** Diálogo de verificación de HUELLAS para una marcación, sin PIN ni rostro. */
+/** El resultado exitoso permite continuar la marcación local DEMO. */
 @Composable
 fun FingerprintDialog(
     tipo: TipoMarca,
@@ -35,18 +38,19 @@ fun FingerprintDialog(
     onCancelar: () -> Unit
 ) {
     val contexto = LocalContext.current
-    val verificador = remember(contexto) { AndroidVerificadorHuella(contexto.applicationContext) }
-    val estado = remember(verificador) { verificador.estado() }
+    // IMPORTANTE: usar contexto de la actividad, no applicationContext.
+    val verificador = remember(contexto) { AndroidVerificadorHuella(contexto) }
+    var estado by remember(verificador) { mutableStateOf(verificador.estado()) }
     val confirmarActual by rememberUpdatedState(onVerificado)
-    var mensaje by remember(estado) {
-        mutableStateOf(
-            when (estado) {
-                EstadoHuella.Lista -> "Coloca tu dedo en el lector para confirmar ${tipo.titulo.lowercase()}."
-                EstadoHuella.SinRegistrar -> "Debes registrar tu huella en los ajustes de Android antes de marcar."
-                EstadoHuella.SinSensor -> "Este teléfono no dispone de un lector de huellas compatible."
-                EstadoHuella.NoDisponible -> "No está disponible la verificación por huella en este teléfono."
-            }
-        )
+    var mensaje by remember { mutableStateOf("") }
+    val ciclo = LocalLifecycleOwner.current
+
+    DisposableEffect(ciclo, verificador) {
+        val observador = LifecycleEventObserver { _, evento ->
+            if (evento == Lifecycle.Event.ON_RESUME) estado = verificador.estado()
+        }
+        ciclo.lifecycle.addObserver(observador)
+        onDispose { ciclo.lifecycle.removeObserver(observador) }
     }
 
     DisposableEffect(verificador, estado) {
@@ -54,32 +58,47 @@ fun FingerprintDialog(
             verificador.verificar { resultado ->
                 when (resultado) {
                     ResultadoHuella.Aprobada -> confirmarActual()
-                    ResultadoHuella.NoReconocida -> mensaje = "Huella no reconocida. Prueba otra vez con el mismo dedo."
+                    ResultadoHuella.NoReconocida ->
+                        mensaje = "Huella no reconocida. Coloca nuevamente el dedo."
                     is ResultadoHuella.Mensaje -> mensaje = resultado.texto
-                    is ResultadoHuella.Error -> mensaje = "No se registró la marcación: ${resultado.texto}"
+                    is ResultadoHuella.Error -> mensaje = "Marcación bloqueada: ${resultado.texto}"
                 }
             }
         } else null
         onDispose { cancelar?.invoke() }
     }
 
+    val descripcion = when (estado) {
+        EstadoHuella.Lista -> "Confirma ${tipo.titulo.lowercase()} en el lector de huellas del celular."
+        EstadoHuella.SinRegistrar -> "Configura una huella en los ajustes de seguridad de Android."
+        EstadoHuella.SinSensor -> "Este celular no declara sensor de huella digital. No se puede marcar."
+        EstadoHuella.NoDisponible -> "Huella fuerte no disponible. Si el celular también tiene rostro o iris, " +
+            "MarcApp bloquea la marcación porque Android no permite seleccionar únicamente huella."
+    }
+
     AlertDialog(
         onDismissRequest = onCancelar,
-        icon = { Icon(Icons.Default.Fingerprint, contentDescription = null, tint = C.VerdeAccion) },
+        icon = { Icon(Icons.Default.Fingerprint, null, tint = C.VerdeAccion) },
         title = { Text("Verifica tu huella digital") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Acción: ${tipo.titulo}")
-                Text(mensaje)
-                Text("MarcApp no almacena tu huella. La verifica Android.", color = C.Secundario)
+                Text(descripcion)
+                if (mensaje.isNotEmpty()) Text(mensaje, color = C.Secundario)
+                Text("Android gestiona la huella; MarcApp no la almacena.", color = C.Secundario)
             }
         },
         confirmButton = {
             if (estado == EstadoHuella.SinRegistrar) {
                 TextButton(onClick = {
-                    // Abre los ajustes de seguridad; Android gestiona el registro de varios toques.
-                    runCatching { contexto.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) }
-                        .onFailure { mensaje = "Abre Ajustes > Seguridad > Huella digital manualmente." }
+                    runCatching {
+                        contexto.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                    }.onFailure {
+                        mensaje = "Abre Ajustes > Seguridad > Huellas digitales manualmente."
+                    }
                 }) { Text("Configurar huella") }
             } else {
                 TextButton(onClick = onCancelar) { Text("Cerrar") }

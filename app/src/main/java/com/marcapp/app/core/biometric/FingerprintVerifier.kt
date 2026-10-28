@@ -1,19 +1,21 @@
 package com.marcapp.app.core.biometric
 
-import android.Manifest
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
-import android.hardware.fingerprint.FingerprintManager
-import android.os.CancellationSignal
-import android.os.Handler
-import android.os.Looper
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * SOLO huella digital: usa FingerprintManager porque BiometricPrompt no ofrece
- * un selector público para forzar la modalidad huella en todos los dispositivos.
+ * Restricción conservadora: usar biometría fuerte solo en teléfonos que
+ * declaren un sensor de huella y NO declaren sensores de rostro/iris.
  *
- * API OBSOLETA: apta únicamente para prototipos y dispositivos validados.
- * La aplicación no captura, lee ni guarda plantillas de huellas.
+ * BiometricPrompt no permite forzar la modalidad 'huella' por API pública.
+ * Por seguridad, MarcApp NO marca en equipos multimodales. No hay PIN.
+ * No es una prueba de identidad del empleado ni una prueba criptográfica.
  */
 sealed interface EstadoHuella {
     data object Lista : EstadoHuella
@@ -31,86 +33,98 @@ sealed interface ResultadoHuella {
 
 interface VerificadorHuella {
     fun estado(): EstadoHuella
-    /** Inicia verificación y devuelve una operación para cancelarla. */
+    /** Retorna una función para cancelar el cuadro biométrico. */
     fun verificar(onResultado: (ResultadoHuella) -> Unit): () -> Unit
 }
 
-@Suppress("DEPRECATION")
 class AndroidVerificadorHuella(private val contexto: Context) : VerificadorHuella {
 
-    private fun gestor(): FingerprintManager? =
-        contexto.getSystemService(FingerprintManager::class.java)
+    private fun actividadActual(): FragmentActivity? {
+        var actual: Context = contexto
+        while (true) {
+            if (actual is FragmentActivity) return actual
+            if (actual !is ContextWrapper) return null
+            val siguiente = actual.baseContext
+            if (siguiente === actual) return null
+            actual = siguiente
+        }
+    }
+
+    private fun dispositivoSoloHuella(): Boolean {
+        val paquetes = contexto.packageManager
+        return paquetes.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT) &&
+            !paquetes.hasSystemFeature("android.hardware.biometrics.face") &&
+            !paquetes.hasSystemFeature("android.hardware.biometrics.iris")
+    }
 
     override fun estado(): EstadoHuella {
-        if (contexto.checkSelfPermission(Manifest.permission.USE_FINGERPRINT) != PackageManager.PERMISSION_GRANTED) {
-            return EstadoHuella.NoDisponible
+        if (!dispositivoSoloHuella()) {
+            return if (contexto.packageManager.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)) {
+                EstadoHuella.NoDisponible // Rostro/iris también presentes: no podemos forzar huella.
+            } else EstadoHuella.SinSensor
         }
-        return try {
-            val fingerprint = gestor() ?: return EstadoHuella.SinSensor
-            when {
-                !fingerprint.isHardwareDetected -> EstadoHuella.SinSensor
-                !fingerprint.hasEnrolledFingerprints() -> EstadoHuella.SinRegistrar
-                else -> EstadoHuella.Lista
-            }
-        } catch (_: Exception) {
-            EstadoHuella.NoDisponible
+        if (actividadActual() == null) return EstadoHuella.NoDisponible
+        return when (
+            BiometricManager.from(contexto).canAuthenticate(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG
+            )
+        ) {
+            BiometricManager.BIOMETRIC_SUCCESS -> EstadoHuella.Lista
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> EstadoHuella.SinRegistrar
+            BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> EstadoHuella.SinSensor
+            else -> EstadoHuella.NoDisponible
         }
     }
 
     override fun verificar(onResultado: (ResultadoHuella) -> Unit): () -> Unit {
-        val cancelacion = CancellationSignal()
-        var activo = true
-        val cancelar = {
-            activo = false
-            if (!cancelacion.isCanceled) cancelacion.cancel()
+        val actividad = actividadActual()
+        if (actividad == null || estado() != EstadoHuella.Lista) {
+            onResultado(ResultadoHuella.Error(
+                "No hay huella fuerte compatible o el teléfono también admite rostro/iris."
+            ))
+            return {}
         }
 
-        if (estado() != EstadoHuella.Lista) {
-            onResultado(ResultadoHuella.Error("No hay una huella registrada y disponible en este teléfono."))
-            return cancelar
+        val activa = AtomicBoolean(true)
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                if (activa.compareAndSet(true, false)) onResultado(ResultadoHuella.Aprobada)
+            }
+
+            override fun onAuthenticationFailed() {
+                if (activa.get()) onResultado(ResultadoHuella.NoReconocida)
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (activa.compareAndSet(true, false)) {
+                    onResultado(ResultadoHuella.Error(errString.toString()))
+                }
+            }
         }
+
+        val prompt = BiometricPrompt(
+            actividad,
+            ContextCompat.getMainExecutor(actividad),
+            callback
+        )
+        val opciones = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("MarcApp · Confirma tu huella")
+            .setSubtitle("Verificación obligatoria para marcar asistencia")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            .setNegativeButtonText("Cancelar")
+            .build()
 
         try {
-            val fingerprint = gestor()
-            if (fingerprint == null) {
-                onResultado(ResultadoHuella.Error("Este teléfono no tiene lector de huellas disponible."))
-                return cancelar
-            }
-            fingerprint.authenticate(
-                null, // DEMO: para producción usar un CryptoObject y prueba criptográfica en servidor.
-                cancelacion,
-                0,
-                object : FingerprintManager.AuthenticationCallback() {
-                    override fun onAuthenticationSucceeded(result: FingerprintManager.AuthenticationResult) {
-                        if (activo) {
-                            activo = false
-                            onResultado(ResultadoHuella.Aprobada)
-                        }
-                    }
-
-                    override fun onAuthenticationFailed() {
-                        if (activo) onResultado(ResultadoHuella.NoReconocida)
-                    }
-
-                    override fun onAuthenticationHelp(helpCode: Int, helpString: CharSequence) {
-                        if (activo) onResultado(ResultadoHuella.Mensaje(helpString.toString()))
-                    }
-
-                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                        if (activo) {
-                            activo = false
-                            onResultado(ResultadoHuella.Error(errString.toString()))
-                        }
-                    }
-                },
-                Handler(Looper.getMainLooper())
-            )
+            prompt.authenticate(opciones)
         } catch (error: Exception) {
-            if (activo) {
-                activo = false
-                onResultado(ResultadoHuella.Error("No se pudo iniciar el sensor: ${error.message ?: "error desconocido"}"))
+            if (activa.compareAndSet(true, false)) {
+                onResultado(ResultadoHuella.Error(
+                    "No se pudo abrir la verificación biométrica: ${error.message ?: "sin detalles"}"
+                ))
             }
         }
-        return cancelar
+        return {
+            if (activa.compareAndSet(true, false)) prompt.cancelAuthentication()
+        }
     }
 }
