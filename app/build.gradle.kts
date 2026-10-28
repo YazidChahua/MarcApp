@@ -5,7 +5,12 @@ plugins {
 
 android {
     namespace = "com.marcapp.app"
-    compileSdk { version = release(37) }
+    compileSdk {
+    version = release(37) {
+        minorApiLevel = 0
+        }
+    }
+
     defaultConfig {
         applicationId = "com.marcapp.app"
         minSdk = 26
