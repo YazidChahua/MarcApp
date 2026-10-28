@@ -79,10 +79,11 @@ fun MarcarScreen(usuario: Usuario, vm: AttendanceViewModel) {
     val marcas by vm.marcaciones.collectAsState()
     val mensaje by vm.mensaje.collectAsState()
     val hoy = marcas.filter { it.fechaHora.toLocalDate() == LocalDate.now() }
+    var tipoPendiente by remember { mutableStateOf<TipoMarca?>(null) }
     ColumnaPantalla {
         TituloSeccion("Marcar asistencia", "Registra tu jornada en un solo toque")
         if (!usuario.esDemo) Aviso("En producción, el backend no devuelve todavía el ID de colaborador ni valida geocerca. Se deshabilita el envío real para evitar registros erróneos.", true)
-        else Aviso("DEMO: puedes probar las cuatro acciones. Respeta el orden; el horario y la geocerca no se comprueban en el servidor.")
+        else Aviso("DEMO: se exige huella digital antes de cada marcación. Los registros siguen siendo locales; la geocerca y el horario requieren el servidor.")
         GpsCard()
         TituloSeccion("Acciones de marcación")
         TipoMarca.entries.forEach { tipo ->
@@ -98,12 +99,23 @@ fun MarcarScreen(usuario: Usuario, vm: AttendanceViewModel) {
                     }
                 }
                 BotonPrincipal(if (ya) "Registrado" else "Registrar ${tipo.titulo.lowercase()}",
-                    { vm.marcar(tipo, usuario) }, Modifier.fillMaxWidth(), habilitado = !ya && usuario.esDemo)
+                    { tipoPendiente = tipo }, Modifier.fillMaxWidth(), habilitado = !ya && usuario.esDemo)
             }
         }
         if (mensaje != null) AlertDialog(onDismissRequest = vm::limpiarMensaje,
             title = { Text("MarcApp") }, text = { Text(mensaje ?: "") },
             confirmButton = { TextButton(onClick = vm::limpiarMensaje) { Text("Entendido") } })
+    }
+    val pendiente = tipoPendiente
+    if (pendiente != null) {
+        FingerprintDialog(
+            tipo = pendiente,
+            onVerificado = {
+                tipoPendiente = null
+                vm.marcar(pendiente, usuario)
+            },
+            onCancelar = { tipoPendiente = null }
+        )
     }
 }
 
