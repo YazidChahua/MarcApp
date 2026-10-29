@@ -13,7 +13,9 @@ class DemoAsistenciaRepository : AsistenciaRepository {
     private val eventos = MutableStateFlow<List<Marcacion>>(emptyList())
     override val marcaciones: StateFlow<List<Marcacion>> = eventos
 
-    override suspend fun marcar(tipo: TipoMarca, usuario: Usuario): String {
+    suspend fun marcar(tipo: TipoMarca, usuario: Usuario): String = marcar(tipo, usuario, null, null)
+
+    override suspend fun marcar(tipo: TipoMarca, usuario: Usuario, latitud: Double?, longitud: Double?): String {
         if (!usuario.esDemo) return "La API actual no devuelve idColaborador y aún no valida GPS. No se enviará esta marcación."
         val hoy = eventos.value.filter { it.fechaHora.toLocalDate() == LocalDate.now() }
         if (hoy.any { it.tipo == tipo }) return "Esta marcación ya se registró hoy (demo)."

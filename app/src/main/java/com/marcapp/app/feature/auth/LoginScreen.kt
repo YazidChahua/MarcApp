@@ -63,9 +63,9 @@ fun LoginScreen(
                         unfocusedBorderColor = MarcAppColors.Borde,
                         focusedContainerColor = Color.White, unfocusedContainerColor = Color.White))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = recordar, onCheckedChange = { recordar = it },
+                    Checkbox(checked = recordar, onCheckedChange = { recordar = it }, enabled = false,
                         colors = CheckboxDefaults.colors(checkedColor = MarcAppColors.VerdeAccion))
-                    Text("Recordarme", Modifier.weight(1f), fontSize = 12.sp, color = MarcAppColors.Secundario)
+                    Text("Recordarme (próximamente)", Modifier.weight(1f), fontSize = 12.sp, color = MarcAppColors.Secundario)
                     TextButton(onClick = { recuperar = true }) { Text("¿Olvidaste tu contraseña?", fontSize = 11.sp) }
                 }
                 if (estado.error != null) Aviso(estado.error, true)

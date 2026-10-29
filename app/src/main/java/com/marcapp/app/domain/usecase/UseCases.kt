@@ -12,5 +12,6 @@ class IniciarSesionUseCase(private val repository: AuthRepository) {
 }
 
 class RegistrarMarcacionUseCase(private val repository: AsistenciaRepository) {
-    suspend operator fun invoke(tipo: TipoMarca, usuario: Usuario): String = repository.marcar(tipo, usuario)
+    suspend operator fun invoke(tipo: TipoMarca, usuario: Usuario, latitud: Double?, longitud: Double?): String =
+        repository.marcar(tipo, usuario, latitud, longitud)
 }

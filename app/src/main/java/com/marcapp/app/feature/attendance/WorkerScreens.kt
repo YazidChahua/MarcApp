@@ -1,5 +1,11 @@
 package com.marcapp.app.feature.attendance
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +26,9 @@ import androidx.compose.ui.unit.sp
 import com.marcapp.app.BuildConfig
 import com.marcapp.app.core.designsystem.MarcAppColors as C
 import com.marcapp.app.core.location.GpsCard
+import com.marcapp.app.core.location.Coordenadas
+import com.marcapp.app.core.location.obtenerGpsActual
+import kotlinx.coroutines.launch
 import com.marcapp.app.core.ui.*
 import com.marcapp.app.domain.model.*
 import com.marcapp.app.feature.admin.GestionViewModel
@@ -70,7 +79,7 @@ fun InicioTrabajador(usuario: Usuario, vm: AttendanceViewModel, irAMarcar: () ->
                 }
             }
         }
-        Aviso("El horario, las tardanzas y las reglas de refrigerio definitivos serán calculados por el backend.")
+        Aviso("En sesión real, el servidor valida horarios, jornada y geocerca antes de guardar.")
     }
 }
 
@@ -78,13 +87,53 @@ fun InicioTrabajador(usuario: Usuario, vm: AttendanceViewModel, irAMarcar: () ->
 fun MarcarScreen(usuario: Usuario, vm: AttendanceViewModel) {
     val marcas by vm.marcaciones.collectAsState()
     val mensaje by vm.mensaje.collectAsState()
+    val enProceso by vm.enProceso.collectAsState()
     val hoy = marcas.filter { it.fechaHora.toLocalDate() == LocalDate.now() }
+    val contexto = LocalContext.current
+    val scope = rememberCoroutineScope()
     var tipoPendiente by remember { mutableStateOf<TipoMarca?>(null) }
+    var solicitado by remember { mutableStateOf<TipoMarca?>(null) }
+    var gpsPendiente by remember { mutableStateOf<Coordenadas?>(null) }
+    var consultandoGps by remember { mutableStateOf(false) }
+    var errorGps by remember { mutableStateOf<String?>(null) }
+
+    val preparar: (TipoMarca) -> Unit = { tipo ->
+        if (usuario.esDemo) {
+            gpsPendiente = null
+            tipoPendiente = tipo
+        } else {
+            scope.launch {
+                consultandoGps = true
+                errorGps = null
+                try {
+                    val coords = obtenerGpsActual(contexto)
+                    if (coords == null) {
+                        errorGps = "No se pudo obtener un GPS preciso (máx. 120 m). Activa la ubicación precisa y prueba al aire libre."
+                    } else {
+                        gpsPendiente = coords
+                        tipoPendiente = tipo // Huella DESPUÉS de obtener GPS.
+                    }
+                } catch (_: Exception) {
+                    errorGps = "El GPS no respondió. Actívalo y vuelve a intentarlo."
+                } finally {
+                    consultandoGps = false
+                }
+            }
+        }
+    }
+    val permisoGps = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) solicitado?.let { preparar(it) }
+        else errorGps = "Debes conceder ubicación precisa para registrar en Supabase."
+        solicitado = null
+    }
+
     ColumnaPantalla {
-        TituloSeccion("Marcar asistencia", "Registra tu jornada en un solo toque")
-        if (!usuario.esDemo) Aviso("En producción, el backend no devuelve todavía el ID de colaborador ni valida geocerca. Se deshabilita el envío real para evitar registros erróneos.", true)
-        else Aviso("DEMO: se exige huella digital antes de cada marcación. Los registros siguen siendo locales; la geocerca y el horario requieren el servidor.")
+        TituloSeccion("Marcar asistencia", "Registra tu jornada con huella y GPS")
+        if (usuario.esDemo) Aviso("DEMO: la huella se exige, pero no se guarda en Supabase.")
+        else Aviso("Marcación REAL: se verifica tu huella y se consulta el GPS actual. El servidor aplica horario y geocerca.")
         GpsCard()
+        errorGps?.let { Aviso(it, true) }
+        if (consultandoGps || enProceso) LinearProgressIndicator(Modifier.fillMaxWidth())
         TituloSeccion("Acciones de marcación")
         TipoMarca.entries.forEach { tipo ->
             val ya = hoy.any { it.tipo == tipo }
@@ -99,7 +148,13 @@ fun MarcarScreen(usuario: Usuario, vm: AttendanceViewModel) {
                     }
                 }
                 BotonPrincipal(if (ya) "Registrado" else "Registrar ${tipo.titulo.lowercase()}",
-                    { tipoPendiente = tipo }, Modifier.fillMaxWidth(), habilitado = !ya && usuario.esDemo)
+                    {
+                        if (!usuario.esDemo && ContextCompat.checkSelfPermission(contexto,
+                                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                            solicitado = tipo
+                            permisoGps.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                        } else preparar(tipo)
+                    }, Modifier.fillMaxWidth(), habilitado = !ya && !consultandoGps && !enProceso)
             }
         }
         if (mensaje != null) AlertDialog(onDismissRequest = vm::limpiarMensaje,
@@ -108,14 +163,13 @@ fun MarcarScreen(usuario: Usuario, vm: AttendanceViewModel) {
     }
     val pendiente = tipoPendiente
     if (pendiente != null) {
-        FingerprintDialog(
-            tipo = pendiente,
+        FingerprintDialog(tipo = pendiente,
             onVerificado = {
                 tipoPendiente = null
-                vm.marcar(pendiente, usuario)
+                vm.marcar(pendiente, usuario, gpsPendiente?.latitud, gpsPendiente?.longitud)
+                gpsPendiente = null
             },
-            onCancelar = { tipoPendiente = null }
-        )
+            onCancelar = { tipoPendiente = null; gpsPendiente = null })
     }
 }
 
@@ -134,7 +188,7 @@ fun HistorialScreen(vm: AttendanceViewModel) {
         if (mostradas.isEmpty()) {
             Tarjeta {
                 Text("Todavía no hay marcaciones", fontWeight = FontWeight.SemiBold)
-                Text("Usa la pestaña Marcar para generar registros de demostración.", color = C.Secundario)
+                Text("Usa la pestaña Marcar para generar registros.", color = C.Secundario)
             }
         } else mostradas.sortedByDescending { it.fechaHora }.forEach { marca ->
             Tarjeta {
@@ -150,7 +204,7 @@ fun HistorialScreen(vm: AttendanceViewModel) {
                 Text(marca.estado, fontSize = 11.sp, color = C.Secundario)
             }
         }
-        Aviso("RF21–RF23: consulta demo local. Historial real y tardanza requieren endpoints del backend.")
+        Aviso("En sesión real se consulta el historial de los últimos 7 días desde Supabase. En DEMO es local.")
     }
 }
 
@@ -211,7 +265,7 @@ fun PerfilScreen(usuario: Usuario, salir: () -> Unit) {
             }
             Separador()
             Dato("Correo", usuario.correo)
-            Dato("Modo", if (usuario.esDemo) "Demostración sin servidor" else "Sesión remota · integración parcial")
+            Dato("Modo", if (usuario.esDemo) "Demostración sin servidor" else "Sesión real · Render y Supabase")
             Dato("Dispositivo", "Vinculación pendiente de API")
         }
         Tarjeta {
@@ -220,6 +274,6 @@ fun PerfilScreen(usuario: Usuario, salir: () -> Unit) {
             Text("Notificaciones y recuperación de contraseña: pendientes de integrar.", fontSize = 12.sp, color = C.Secundario)
         }
         BotonPrincipal("Cerrar sesión", salir, Modifier.fillMaxWidth())
-        Aviso("Esta compilación es de demostración y no debe utilizarse para tomar asistencia real.")
+        Aviso(if (usuario.esDemo) "Modo DEMO: no registra asistencia real." else "Asistencia e historial conectados. Gestión, justificaciones y reportes siguen pendientes de integrar.")
     }
 }

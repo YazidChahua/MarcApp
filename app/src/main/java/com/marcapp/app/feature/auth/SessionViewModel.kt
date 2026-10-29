@@ -28,5 +28,5 @@ class SessionViewModel(private val auth: AuthRepository) : ViewModel() {
             }
         }
     }
-    fun cerrarSesion() { usuarioMutable.value = null; loginMutable.value = LoginUiState() }
+    fun cerrarSesion() { auth.cerrar(); usuarioMutable.value = null; loginMutable.value = LoginUiState() }
 }

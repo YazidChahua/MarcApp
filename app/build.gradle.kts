@@ -14,7 +14,7 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // HTTPS base URL ending in '/'. Empty means use DEMO ONLY.
-        buildConfigField("String", "API_BASE_URL", "\"\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://marcapp-backend.onrender.com/\"")
         // Actual URL of your admin website, once deployed. Never invent a domain.
         buildConfigField("String", "ADMIN_WEB_URL", "\"\"")
     }

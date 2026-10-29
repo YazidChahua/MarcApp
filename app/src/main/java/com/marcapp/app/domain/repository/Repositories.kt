@@ -11,11 +11,13 @@ sealed interface ResultadoLogin {
 interface AuthRepository {
     suspend fun iniciar(correo: String, clave: String): ResultadoLogin
     fun demo(rol: Rol): Usuario
+    fun cerrar() {}
 }
 
 interface AsistenciaRepository {
     val marcaciones: StateFlow<List<Marcacion>>
-    suspend fun marcar(tipo: TipoMarca, usuario: Usuario): String
+    suspend fun cargar(usuario: Usuario): String? = null
+    suspend fun marcar(tipo: TipoMarca, usuario: Usuario, latitud: Double? = null, longitud: Double? = null): String
 }
 
 interface GestionRepository {

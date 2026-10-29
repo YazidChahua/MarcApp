@@ -30,7 +30,7 @@ import com.marcapp.app.core.biometric.ResultadoHuella
 import com.marcapp.app.core.designsystem.MarcAppColors as C
 import com.marcapp.app.domain.model.TipoMarca
 
-/** El resultado exitoso permite continuar la marcación local DEMO. */
+/** La biometría local es requisito antes de solicitar la marcación. */
 @Composable
 fun FingerprintDialog(
     tipo: TipoMarca,

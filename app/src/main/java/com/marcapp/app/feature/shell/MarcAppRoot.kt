@@ -39,6 +39,7 @@ private val adminTabs = listOf(
 fun MarcAppRoot(sesion: SessionViewModel, asistencia: AttendanceViewModel, gestion: GestionViewModel) {
     val usuario by sesion.usuario.collectAsState()
     val loginUi by sesion.loginState.collectAsState()
+    LaunchedEffect(usuario) { if (usuario != null) asistencia.cargar(usuario!!) }
     Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = C.Fondo) {
         if (usuario == null) LoginScreen(loginUi, sesion::entrar, sesion::entrarDemo)
         else key(usuario!!.rol) { NavegacionPrincipal(usuario!!, asistencia, gestion, sesion::cerrarSesion) }
