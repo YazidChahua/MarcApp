@@ -28,7 +28,7 @@ interface GestionRepository {
     val auditoria: StateFlow<List<Auditoria>>
     val tolerancia: StateFlow<Int>
     val radioGeocerca: StateFlow<Int>
-    fun enviarJustificacion(correo: String, fecha: String, motivo: String, detalle: String): String
+    fun enviarJustificacion(correo: String, fecha: String, motivo: String, detalle: String, adjuntos: List<String> = emptyList()): String
     fun responderJustificacion(id: Int, aprobar: Boolean)
     fun agregarTrabajador(nombre: String, correo: String)
     fun editarTrabajador(id: Int, nombre: String, cargo: String)

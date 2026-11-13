@@ -27,7 +27,8 @@ data class Justificacion(
     val fecha: String,
     val motivo: String,
     val detalle: String,
-    val estado: String = "Pendiente"
+    val estado: String = "Pendiente",
+    val adjuntos: List<String> = emptyList() // URIs de fotos/imágenes adjuntas
 )
 
 data class Trabajador(val id: Int, val nombre: String, val cargo: String, val correo: String, val activo: Boolean = true)

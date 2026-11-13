@@ -29,4 +29,9 @@ class SessionViewModel(private val auth: AuthRepository) : ViewModel() {
         }
     }
     fun cerrarSesion() { auth.cerrar(); usuarioMutable.value = null; loginMutable.value = LoginUiState() }
+
+    /** Actualiza el correo del usuario en sesión (tras validar el código). */
+    fun actualizarCorreo(nuevo: String) {
+        usuarioMutable.value = usuarioMutable.value?.copy(correo = nuevo.trim())
+    }
 }

@@ -1,12 +1,14 @@
 package com.marcapp.app.feature.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -26,13 +28,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.marcapp.app.core.designsystem.*
 import com.marcapp.app.core.ui.*
-import com.marcapp.app.domain.model.Rol
 
 @Composable
 fun LoginScreen(
     estado: LoginUiState,
-    onLogin: (String, String) -> Unit,
-    onDemo: (Rol) -> Unit
+    onLogin: (String, String) -> Unit
 ) {
     var correo by rememberSaveable { mutableStateOf("") }
     var clave by rememberSaveable { mutableStateOf("") }
@@ -40,78 +40,91 @@ fun LoginScreen(
     var recordar by rememberSaveable { mutableStateOf(false) }
     var recuperar by rememberSaveable { mutableStateOf(false) }
 
+    // Fondo blanco de base: se funde con la barra de gestos blanca del celular
+    // para que la parte de abajo no se vea cortada ni con una franja rara.
     Column(
         Modifier
             .fillMaxSize()
-            .background(MarcAppColors.Fondo)
+            .background(Color.White)
             .verticalScroll(rememberScrollState())
     ) {
-        // ----------------------------------------------------------------
-        // CABECERA (zona superior tipo "hero").
-        // Aquí irá la imagen de bienvenida más adelante: el recuadro de la
-        // izquierda está reservado y vacío a propósito. Cuando Luis decida
-        // qué foto poner, se reemplaza el Box "RESERVADO PARA IMAGEN".
-        // ----------------------------------------------------------------
+        // ================================================================
+        // CABECERA (hero) estilo Shalom: ocupa todo el ancho y llega hasta
+        // el borde superior (debajo de la barra de estado). Aquí irá la
+        // imagen de bienvenida; por ahora el marco está reservado y vacío.
+        // ================================================================
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(240.dp)
                 .background(
                     Brush.verticalGradient(
                         listOf(MarcAppColors.VerdeOscuro, Color(0xFF0A5247))
                     )
                 )
         ) {
-            Row(
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 40.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .statusBarsPadding() // empuja el contenido debajo del reloj/batería
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 28.dp, bottom = 52.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // --- RESERVADO PARA IMAGEN (por ahora vacío) ---
+                // ---- MARCO RESERVADO PARA LA IMAGEN (vacío por ahora) ----
+                // Cuando tengas la foto, se reemplaza este Box por un Image(...)
+                // con el mismo tamaño y esquinas redondeadas y quedará encuadrada.
                 Box(
                     Modifier
                         .size(96.dp)
-                        .background(Color(0x22FFFFFF), RoundedCornerShape(20.dp))
-                )
-                Spacer(Modifier.width(18.dp))
-                Column {
-                    Text("Bienvenido a", color = Color(0xFFCDE7DF), fontSize = 18.sp)
-                    Text(
-                        "MarcApp",
-                        color = Color.White,
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Bold
+                        .background(Color(0x1FFFFFFF), RoundedCornerShape(24.dp))
+                        .border(1.dp, Color(0x40FFFFFF), RoundedCornerShape(24.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        tint = Color(0x66FFFFFF),
+                        modifier = Modifier.size(34.dp)
                     )
-                    Text("BuyPal Store", color = Color(0xFF8FD4BE), fontSize = 13.sp)
                 }
+                Spacer(Modifier.height(18.dp))
+                Text("Bienvenido a", color = Color(0xFFBFE4DA), fontSize = 16.sp)
+                Text(
+                    "MarcApp",
+                    color = Color.White,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(2.dp))
+                Text("BuyPal Store", color = Color(0xFF7FCDB6), fontSize = 13.sp)
             }
         }
 
-        // ----------------------------------------------------------------
-        // TARJETA DE CONTENIDO (se superpone a la cabecera con esquinas
-        // superiores redondeadas, como en el modelo de referencia).
-        // ----------------------------------------------------------------
+        // ================================================================
+        // HOJA DE CONTENIDO: tarjeta blanca con esquinas superiores
+        // redondeadas que sube y se superpone a la cabecera (como Shalom).
+        // ================================================================
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset(y = (-28).dp),
+                .offset(y = (-26).dp),
             color = Color.White,
-            shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-            shadowElevation = 6.dp
+            shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+            shadowElevation = 8.dp
         ) {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, end = 24.dp, top = 30.dp, bottom = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .navigationBarsPadding() // respeta la barra de gestos del celular
+                    .padding(horizontal = 26.dp)
+                    .padding(top = 32.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
                 TituloSeccion(
                     if (recuperar) "Recuperar contraseña" else "Iniciar sesión",
                     if (recuperar) "La recuperación estará disponible al integrar el servicio de correo."
                     else "Ingresa tus datos para marcar tu asistencia."
                 )
-                Spacer(Modifier.height(2.dp))
 
                 CampoTexto("Correo electrónico", correo, { correo = it })
 
@@ -147,7 +160,10 @@ fun LoginScreen(
                     )
 
                     // --- Recuérdame + ¿Olvidaste tu contraseña? ---
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Checkbox(
                             checked = recordar,
                             onCheckedChange = { recordar = it },
@@ -160,7 +176,10 @@ fun LoginScreen(
                             fontSize = 13.sp,
                             color = MarcAppColors.Secundario
                         )
-                        TextButton(onClick = { recuperar = true }) {
+                        TextButton(
+                            onClick = { recuperar = true },
+                            contentPadding = PaddingValues(horizontal = 4.dp)
+                        ) {
                             Text(
                                 "¿Olvidaste tu contraseña?",
                                 fontSize = 12.sp,
@@ -180,28 +199,21 @@ fun LoginScreen(
                     )
                     if (estado.cargando) LinearProgressIndicator(Modifier.fillMaxWidth())
 
+                    Spacer(Modifier.height(4.dp))
                     Separador()
-
                     Text(
-                        "Acceso seguro para personal de BuyPal",
+                        "Acceso seguro para el personal de BuyPal Store",
                         Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center,
                         fontSize = 12.sp,
                         color = MarcAppColors.Secundario
                     )
-
-                    Aviso("Para probar sin servidor, elige un perfil de demostración. Los datos no son reales.")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { onDemo(Rol.TRABAJADOR) }, modifier = Modifier.weight(1f)) {
-                            Text("Demo trabajador", fontSize = 12.sp)
-                        }
-                        OutlinedButton(onClick = { onDemo(Rol.ADMINISTRADOR) }, modifier = Modifier.weight(1f)) {
-                            Text("Demo admin", fontSize = 12.sp)
-                        }
-                    }
                 } else {
                     Aviso("RF03–RF04: el backend actual no ofrece endpoints de recuperación/restablecimiento.", true)
-                    OutlinedButton(onClick = { recuperar = false }) { Text("Volver al inicio de sesión") }
+                    OutlinedButton(
+                        onClick = { recuperar = false },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Volver al inicio de sesión") }
                 }
             }
         }
@@ -210,4 +222,4 @@ fun LoginScreen(
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 780, name = "MarcApp · Inicio de sesión")
 @Composable
-private fun LoginPreview() { MarcAppTheme { LoginScreen(LoginUiState(), { _, _ -> }, { }) } }
+private fun LoginPreview() { MarcAppTheme { LoginScreen(LoginUiState(), { _, _ -> }) } }

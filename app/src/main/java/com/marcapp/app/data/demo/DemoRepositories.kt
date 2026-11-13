@@ -59,10 +59,10 @@ class DemoGestionRepository : GestionRepository {
     private fun auditar(accion: String) {
         bitacora.value = listOf(Auditoria(LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM HH:mm")), accion)) + bitacora.value
     }
-    override fun enviarJustificacion(correo: String, fecha: String, motivo: String, detalle: String): String {
+    override fun enviarJustificacion(correo: String, fecha: String, motivo: String, detalle: String, adjuntos: List<String>): String {
         if (fecha.isBlank() || detalle.isBlank()) return "Completa la fecha y el sustento."
         items.value = listOf(Justificacion((items.value.maxOfOrNull { it.id } ?: 0) + 1,
-            correo, fecha, motivo, detalle)) + items.value
+            correo, fecha, motivo, detalle, adjuntos = adjuntos)) + items.value
         auditar("Justificación de $correo creada (DEMO)")
         return "Solicitud enviada en modo demo (sin servidor)."
     }

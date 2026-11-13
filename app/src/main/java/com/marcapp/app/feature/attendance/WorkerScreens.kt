@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.marcapp.app.BuildConfig
 import com.marcapp.app.core.designsystem.MarcAppColors as C
-import com.marcapp.app.core.location.GpsCard
+import com.marcapp.app.core.location.MapaMarcacion
 import com.marcapp.app.core.location.Coordenadas
 import com.marcapp.app.core.location.obtenerGpsActual
 import kotlinx.coroutines.launch
@@ -79,7 +79,6 @@ fun InicioTrabajador(usuario: Usuario, vm: AttendanceViewModel, irAMarcar: () ->
                 }
             }
         }
-        Aviso("En sesión real, el servidor valida horarios, jornada y geocerca antes de guardar.")
     }
 }
 
@@ -128,10 +127,8 @@ fun MarcarScreen(usuario: Usuario, vm: AttendanceViewModel) {
     }
 
     ColumnaPantalla {
-        TituloSeccion("Marcar asistencia", "Registra tu jornada con huella y GPS")
-        if (usuario.esDemo) Aviso("DEMO: la huella se exige, pero no se guarda en Supabase.")
-        else Aviso("Marcación REAL: se verifica tu huella y se consulta el GPS actual. El servidor aplica horario y geocerca.")
-        GpsCard()
+        TituloSeccion("Marcar asistencia")
+        MapaMarcacion()
         errorGps?.let { Aviso(it, true) }
         if (consultandoGps || enProceso) LinearProgressIndicator(Modifier.fillMaxWidth())
         TituloSeccion("Acciones de marcación")
@@ -173,107 +170,3 @@ fun MarcarScreen(usuario: Usuario, vm: AttendanceViewModel) {
     }
 }
 
-@Composable
-fun HistorialScreen(vm: AttendanceViewModel) {
-    val marcas by vm.marcaciones.collectAsState()
-    var filtro by rememberSaveable { mutableIntStateOf(0) }
-    val hoy = LocalDate.now()
-    val mostradas = marcas.filter { it.fechaHora.toLocalDate() == hoy || (filtro == 1 && !it.fechaHora.toLocalDate().isBefore(hoy.minusDays(6))) }
-    ColumnaPantalla {
-        TituloSeccion("Mi historial", "Consulta tus registros diarios y semanales")
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilterChip(selected = filtro == 0, onClick = { filtro = 0 }, label = { Text("Hoy") })
-            FilterChip(selected = filtro == 1, onClick = { filtro = 1 }, label = { Text("Esta semana") })
-        }
-        if (mostradas.isEmpty()) {
-            Tarjeta {
-                Text("Todavía no hay marcaciones", fontWeight = FontWeight.SemiBold)
-                Text("Usa la pestaña Marcar para generar registros.", color = C.Secundario)
-            }
-        } else mostradas.sortedByDescending { it.fechaHora }.forEach { marca ->
-            Tarjeta {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.CheckCircle, null, tint = C.VerdeAccion)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(marca.tipo.titulo, fontWeight = FontWeight.SemiBold)
-                        Text(marca.fechaHora.format(fechaFmt), color = C.Secundario, fontSize = 12.sp)
-                    }
-                    Text(marca.fechaHora.format(horaFmt), color = C.VerdeOscuro)
-                }
-                Text(marca.estado, fontSize = 11.sp, color = C.Secundario)
-            }
-        }
-        Aviso("En sesión real se consulta el historial de los últimos 7 días desde Supabase. En DEMO es local.")
-    }
-}
-
-@Composable
-fun SolicitudesScreen(usuario: Usuario, vm: GestionViewModel) {
-    var fecha by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
-    var motivo by rememberSaveable { mutableStateOf("Tardanza") }
-    var detalle by rememberSaveable { mutableStateOf("") }
-    var mensaje by remember { mutableStateOf<String?>(null) }
-    val solicitudes by vm.solicitudes.collectAsState()
-    ColumnaPantalla {
-        TituloSeccion("Justificaciones", "Solicitudes de tardanza e inasistencia")
-        Tarjeta {
-            Text("Nueva solicitud", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-            CampoTexto("Fecha (AAAA-MM-DD)", fecha, { fecha = it })
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = motivo == "Tardanza", onClick = { motivo = "Tardanza" }, label = { Text("Tardanza") })
-                FilterChip(selected = motivo == "Falta", onClick = { motivo = "Falta" }, label = { Text("Falta") })
-            }
-            CampoTexto("Motivo / sustento", detalle, { detalle = it }, unaLinea = false)
-            BotonPrincipal("Enviar justificación", {
-                mensaje = vm.repository.enviarJustificacion(usuario.correo, fecha, motivo, detalle)
-                if (mensaje?.startsWith("Solicitud enviada") == true) detalle = ""
-            }, Modifier.fillMaxWidth(), habilitado = usuario.esDemo)
-        }
-        mensaje?.let { Aviso(it, it.startsWith("Completa")) }
-        TituloSeccion("Mis solicitudes")
-        val mias = solicitudes.filter { it.usuario.equals(usuario.correo, ignoreCase = true) }
-        if (mias.isEmpty()) Tarjeta { Text("Aún no tienes solicitudes registradas.") }
-        mias.forEach {
-            Tarjeta {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("${it.motivo} · ${it.fecha}", fontWeight = FontWeight.SemiBold)
-                    Text(it.estado, color = if (it.estado == "Aprobada") C.VerdeAccion else C.Secundario, fontSize = 12.sp)
-                }
-                Text(it.detalle, fontSize = 12.sp, color = C.Secundario)
-            }
-        }
-        Aviso("El archivo adjunto, la revisión real y las notificaciones dependen de APIs pendientes.")
-    }
-}
-
-@Composable
-fun PerfilScreen(usuario: Usuario, salir: () -> Unit) {
-    ColumnaPantalla {
-        TituloSeccion("Mi perfil", "Configuración y datos de cuenta")
-        Tarjeta {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(56.dp).background(C.VerdeAccion, RoundedCornerShape(18.dp)),
-                    contentAlignment = Alignment.Center) {
-                    Text(usuario.nombre.take(1), color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(usuario.nombre, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text(if (usuario.rol == Rol.TRABAJADOR) "Colaborador" else "Administrador", color = C.Secundario)
-                }
-            }
-            Separador()
-            Dato("Correo", usuario.correo)
-            Dato("Modo", if (usuario.esDemo) "Demostración sin servidor" else "Sesión real · Render y Supabase")
-            Dato("Dispositivo", "Vinculación pendiente de API")
-        }
-        Tarjeta {
-            Text("Preferencias", fontWeight = FontWeight.SemiBold)
-            Text("Logo definitivo: pendiente de proporcionar.", fontSize = 12.sp, color = C.Secundario)
-            Text("Notificaciones y recuperación de contraseña: pendientes de integrar.", fontSize = 12.sp, color = C.Secundario)
-        }
-        BotonPrincipal("Cerrar sesión", salir, Modifier.fillMaxWidth())
-        Aviso(if (usuario.esDemo) "Modo DEMO: no registra asistencia real." else "Asistencia e historial conectados. Gestión, justificaciones y reportes siguen pendientes de integrar.")
-    }
-}

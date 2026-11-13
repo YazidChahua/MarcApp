@@ -1,5 +1,11 @@
 package com.marcapp.app.feature.shell
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -39,16 +45,42 @@ private val adminTabs = listOf(
 fun MarcAppRoot(sesion: SessionViewModel, asistencia: AttendanceViewModel, gestion: GestionViewModel) {
     val usuario by sesion.usuario.collectAsState()
     val loginUi by sesion.loginState.collectAsState()
-    LaunchedEffect(usuario) { if (usuario != null) asistencia.cargar(usuario!!) }
-    Surface(Modifier.fillMaxSize().safeDrawingPadding(), color = C.Fondo) {
-        if (usuario == null) LoginScreen(loginUi, sesion::entrar, sesion::entrarDemo)
-        else key(usuario!!.rol) { NavegacionPrincipal(usuario!!, asistencia, gestion, sesion::cerrarSesion) }
+    val contexto = LocalContext.current
+
+    // Apenas el usuario inicia sesión, se le pide el permiso de ubicación una sola vez.
+    // Así el mapa funciona de inmediato y ya no hace falta ningún botón extra.
+    val permisoUbicacion = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* el mapa reacciona solo cuando se concede */ }
+
+    LaunchedEffect(usuario) {
+        if (usuario != null) {
+            asistencia.cargar(usuario!!)
+            val concedido = ContextCompat.checkSelfPermission(
+                contexto, Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!concedido) permisoUbicacion.launch(
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+            )
+        }
+    }
+    Surface(Modifier.fillMaxSize(), color = Color.White) {
+        // El login ocupa toda la pantalla (cabecera inmersiva estilo Shalom) y
+        // gestiona sus propios márgenes de sistema. El resto de la app sí mantiene
+        // el safeDrawingPadding para no chocar con las barras del celular.
+        if (usuario == null) LoginScreen(loginUi, sesion::entrar)
+        else key(usuario!!.rol) {
+            Box(Modifier.safeDrawingPadding()) {
+                NavegacionPrincipal(usuario!!, asistencia, gestion, sesion::cerrarSesion, sesion::actualizarCorreo)
+            }
+        }
     }
 }
 
 @Composable
 private fun NavegacionPrincipal(
-    usuario: Usuario, asistencia: AttendanceViewModel, gestion: GestionViewModel, cerrarSesion: () -> Unit
+    usuario: Usuario, asistencia: AttendanceViewModel, gestion: GestionViewModel,
+    cerrarSesion: () -> Unit, cambiarCorreo: (String) -> Unit
 ) {
     val tabs = if (usuario.rol == Rol.TRABAJADOR) trabajadorTabs else adminTabs
     val pager = rememberPagerState(pageCount = { tabs.size })
@@ -93,15 +125,15 @@ private fun NavegacionPrincipal(
             if (usuario.rol == Rol.TRABAJADOR) when (index) {
                 0 -> InicioTrabajador(usuario, asistencia) { scope.launch { pager.animateScrollToPage(1) } }
                 1 -> MarcarScreen(usuario, asistencia)
-                2 -> HistorialScreen(asistencia)
+                2 -> HistorialScreen(asistencia, gestion, usuario)
                 3 -> SolicitudesScreen(usuario, gestion)
-                else -> PerfilScreen(usuario, cerrarSesion)
+                else -> PerfilScreen(usuario, cambiarCorreo, cerrarSesion)
             } else when (index) {
                 0 -> InicioAdministrador(gestion) { scope.launch { pager.animateScrollToPage(1) } }
                 1 -> PersonalScreen(gestion)
                 2 -> GestionScreen(gestion)
                 3 -> ReportesScreen(gestion)
-                else -> PerfilScreen(usuario, cerrarSesion)
+                else -> PerfilScreen(usuario, cambiarCorreo, cerrarSesion)
             }
         }
     }
