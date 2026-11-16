@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -121,9 +122,6 @@ private val horaFmt12 = DateTimeFormatter.ofPattern("hh:mm a")
 private fun fmtHoras(d: Double): String =
     if (d % 1.0 == 0.0) "${d.toInt()} h" else String.format("%.1f h", d)
 
-private fun fmtHorasCorto(d: Double): String =
-    if (d % 1.0 == 0.0) "${d.toInt()}h" else String.format("%.1fh", d)
-
 @Composable
 fun HistorialScreen(vm: AttendanceViewModel, gestion: GestionViewModel, usuario: Usuario) {
     val esDemo = usuario.esDemo
@@ -147,6 +145,8 @@ fun HistorialScreen(vm: AttendanceViewModel, gestion: GestionViewModel, usuario:
     var totalTrabajadas = 0.0
     var totalEsperadas = 0.0
     var totalExtra = 0.0
+    var tardanzasMes = 0
+    var minutosTardanzaMes = 0L
     for (d in 1..mesVisible.lengthOfMonth()) {
         val f = mesVisible.atDay(d)
         if (f.isAfter(hoy)) break
@@ -155,6 +155,12 @@ fun HistorialScreen(vm: AttendanceViewModel, gestion: GestionViewModel, usuario:
         totalTrabajadas += w
         totalEsperadas += r.horasJornada ?: 0.0
         if ((r.horasJornada ?: 0.0) > 0.0) totalExtra += (w - r.horasJornada!!).coerceAtLeast(0.0)
+        if (r.puntual == false) {
+            tardanzasMes++
+            val entrada = r.marcas.firstOrNull { it.tipo == TipoMarca.ENTRADA }?.fechaHora?.toLocalTime()
+            if (entrada != null && entrada.isAfter(JORNADA_DEMO.horaEntrada))
+                minutosTardanzaMes += Duration.between(JORNADA_DEMO.horaEntrada, entrada).toMinutes()
+        }
     }
 
     ColumnaPantallaHist {
@@ -217,7 +223,7 @@ fun HistorialScreen(vm: AttendanceViewModel, gestion: GestionViewModel, usuario:
             DetalleDia(r, justi)
         }
 
-        // ---- Resumen del mes: horas trabajadas y horas extra ----
+        // ---- Resumen del mes: horas, extras y tardanzas ----
         Tarjeta {
             Text("Resumen de ${mesesLargos[mesVisible.monthValue - 1]}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = C.Texto)
             Separador()
@@ -225,15 +231,23 @@ fun HistorialScreen(vm: AttendanceViewModel, gestion: GestionViewModel, usuario:
                 Dato("Horas trabajadas", fmtHoras(totalTrabajadas))
                 Dato("Horas de tu jornada", fmtHoras(totalEsperadas))
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Horas extra", color = C.Secundario, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                Surface(color = if (totalExtra > 0) Color(0xFFD7F5E9) else C.Fondo, shape = RoundedCornerShape(10.dp)) {
-                    Text(
-                        fmtHoras(totalExtra),
-                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        fontWeight = FontWeight.Bold,
-                        color = if (totalExtra > 0) C.VerdeOscuro else C.Secundario
-                    )
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Dato("Horas extra", fmtHoras(totalExtra))
+                Dato("Tardanzas", "$tardanzasMes")
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Dato("Minutos de tardanza", "$minutosTardanzaMes min")
+                // Destaca las horas extra si las hubo.
+                if (totalExtra > 0) {
+                    Surface(color = Color(0xFFD7F5E9), shape = RoundedCornerShape(10.dp)) {
+                        Text(
+                            "+${fmtHoras(totalExtra)} extra",
+                            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            fontWeight = FontWeight.Bold, fontSize = 12.sp, color = C.VerdeOscuro
+                        )
+                    }
                 }
             }
         }
@@ -242,7 +256,7 @@ fun HistorialScreen(vm: AttendanceViewModel, gestion: GestionViewModel, usuario:
     }
 }
 
-/** Celda de un día dentro del calendario. */
+/** Celda de un día: limpia y simple — número centrado y un puntito de estado debajo. */
 @Composable
 private fun CeldaDia(
     modifier: Modifier,
@@ -252,55 +266,61 @@ private fun CeldaDia(
     seleccionado: Boolean,
     onClick: () -> Unit
 ) {
-    val fondo = when {
-        esFuturo -> Color(0xFFEEF1F1)                       // futuro: apagado, no clickeable
-        resumen.puntual == true -> Color(0xFFD7F5E9)        // llegó puntual: verde
-        resumen.puntual == false -> Color(0xFFFFF1DE)       // marcó pero tarde: ámbar
-        else -> Color.White                                 // sin datos
+    val ambar = Color(0xFFE6A23C)
+    val colorEstado = when (resumen.puntual) {
+        true -> C.VerdeAccion
+        false -> ambar
+        null -> Color.Transparent
     }
-    val colorTexto = when {
-        esFuturo -> C.Secundario.copy(alpha = 0.5f)
-        resumen.puntual == true -> C.VerdeOscuro
-        resumen.puntual == false -> Color(0xFF8A5A17)
+    val colorNumero = when {
+        seleccionado -> Color.White
+        esFuturo -> C.Secundario.copy(alpha = 0.4f)
         else -> C.Texto
-    }
-    val borde = when {
-        seleccionado -> C.VerdeAccion
-        esHoy -> C.VerdeAccion.copy(alpha = 0.5f)
-        else -> C.Borde
     }
     Box(
         modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(9.dp))
-            .background(fondo)
-            .border(if (seleccionado) 2.dp else 1.dp, borde, RoundedCornerShape(9.dp))
+            .clip(CircleShape)
+            .then(
+                when {
+                    seleccionado -> Modifier.background(C.VerdeAccion)
+                    esHoy -> Modifier.border(1.5.dp, C.VerdeAccion, CircleShape)
+                    else -> Modifier
+                }
+            )
             .clickable(enabled = !esFuturo, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${resumen.fecha.dayOfMonth}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = colorTexto)
-            if (!esFuturo && resumen.horasTrabajadas != null) {
-                Text(fmtHorasCorto(resumen.horasTrabajadas), fontSize = 9.sp, color = colorTexto)
-            }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                "${resumen.fecha.dayOfMonth}",
+                fontSize = 14.sp,
+                fontWeight = if (esHoy || seleccionado) FontWeight.Bold else FontWeight.Normal,
+                color = colorNumero
+            )
+            // Puntito de estado (siempre ocupa el mismo espacio para no descuadrar los números).
+            Box(
+                Modifier.size(5.dp).clip(CircleShape).background(
+                    if (seleccionado && colorEstado != Color.Transparent) Color.White else colorEstado
+                )
+            )
         }
     }
 }
 
-/** Leyenda de colores del calendario. */
+/** Leyenda simple del calendario. */
 @Composable
 private fun LeyendaCalendario() {
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        PuntoLeyenda(Color(0xFFD7F5E9), "Puntual")
-        PuntoLeyenda(Color(0xFFFFF1DE), "Tardanza")
-        PuntoLeyenda(Color(0xFFEEF1F1), "Próximos")
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        PuntoLeyenda(C.VerdeAccion, "Puntual")
+        PuntoLeyenda(Color(0xFFE6A23C), "Tardanza")
     }
 }
 
 @Composable
 private fun PuntoLeyenda(color: Color, texto: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(color).border(1.dp, C.Borde, RoundedCornerShape(3.dp)))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Text(texto, fontSize = 11.sp, color = C.Secundario)
     }
 }
