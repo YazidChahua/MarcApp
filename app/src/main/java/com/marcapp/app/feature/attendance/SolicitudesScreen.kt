@@ -41,14 +41,22 @@ private val fechaDdMmAaaa = DateTimeFormatter.ofPattern("dd/MM/yyyy")
 fun SolicitudesScreen(usuario: Usuario, vm: GestionViewModel) {
     val contexto = LocalContext.current
     val solicitudes by vm.solicitudes.collectAsState()
+    val misRemotas by vm.misSolicitudes.collectAsState()
+    val mensaje by vm.mensajeJustificacion.collectAsState()
+    val enviando by vm.enviando.collectAsState()
 
     var fecha by remember { mutableStateOf(LocalDate.now()) }
     var motivo by remember { mutableStateOf("Tardanza") }
     var detalle by remember { mutableStateOf("") }
     var adjuntos by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var mensaje by remember { mutableStateOf<String?>(null) }
     var mostrarPicker by remember { mutableStateOf(false) }
     var mesVisible by remember { mutableStateOf(YearMonth.now()) }
+
+    // Trae del servidor las solicitudes del trabajador; limpia el formulario al enviarse bien.
+    LaunchedEffect(usuario) { vm.cargarMisSolicitudes(usuario) }
+    LaunchedEffect(mensaje) {
+        if (mensaje?.startsWith("Solicitud enviada") == true) { detalle = ""; adjuntos = emptyList() }
+    }
 
     // --- Selector de imágenes de la galería (varias a la vez) ---
     val galeria = rememberLauncherForActivityResult(
@@ -133,20 +141,18 @@ fun SolicitudesScreen(usuario: Usuario, vm: GestionViewModel) {
                 }
             }
 
-            BotonPrincipal("Enviar justificación", {
-                mensaje = vm.repository.enviarJustificacion(
-                    usuario.correo, fecha.toString(), motivo, detalle, adjuntos.map { it.toString() }
-                )
-                if (mensaje?.startsWith("Solicitud enviada") == true) { detalle = ""; adjuntos = emptyList() }
-            }, Modifier.fillMaxWidth(), habilitado = detalle.isNotBlank())
+            BotonPrincipal(if (enviando) "Enviando…" else "Enviar justificación", {
+                vm.enviarJustificacion(usuario, fecha.toString(), motivo, detalle)
+            }, Modifier.fillMaxWidth(), habilitado = detalle.isNotBlank() && !enviando)
         }
-        mensaje?.let { Aviso(it, it.startsWith("Completa")) }
+        mensaje?.let { Aviso(it, !it.startsWith("Solicitud enviada")) }
 
         // ================= MIS SOLICITUDES (por mes) =================
         TituloSeccion("Mis solicitudes")
         NavegadorMes(mes = mesVisible, onCambio = { mesVisible = it })
 
-        val mias = solicitudes
+        val fuente = if (usuario.esDemo) solicitudes else misRemotas
+        val mias = fuente
             .filter { it.usuario.equals(usuario.correo, ignoreCase = true) }
             .filter { runCatching { YearMonth.from(LocalDate.parse(it.fecha)) == mesVisible }.getOrDefault(false) }
             .sortedByDescending { it.id } // la más nueva primero, la más antigua al final

@@ -29,6 +29,24 @@ data class GeocercaResponse(
     val precisionMaxMetros: Int
 )
 
+/** Justificación que el trabajador envía desde la app. */
+data class JustificacionRequest(val fecha: String, val tipo: String, val mensaje: String)
+
+/** Justificación tal como la devuelve el backend. */
+data class JustificacionResponse(
+    val id: Int,
+    val trabajadorId: Int,
+    val trabajador: String?,
+    val dni: String?,
+    val tipo: String?,
+    val fecha: String?,
+    val mensaje: String?,
+    val evidencia: String?,
+    val estado: String?,
+    val enviadaEl: String?,
+    val respuestaAdmin: String?
+)
+
 interface BackendApi {
     @POST("api/auth/login/colaborador")
     suspend fun loginTrabajador(@Body request: LoginRequest): LoginResponse
@@ -47,7 +65,26 @@ interface BackendApi {
 
     @GET("api/marcapp/geocerca")
     suspend fun geocerca(@Header("Authorization") bearer: String): GeocercaResponse
+
+    @POST("api/marcapp/justificaciones")
+    suspend fun enviarJustificacion(@Header("Authorization") bearer: String, @Body body: JustificacionRequest): JustificacionResponse
+
+    @GET("api/marcapp/justificaciones")
+    suspend fun misJustificaciones(@Header("Authorization") bearer: String): List<JustificacionResponse>
 }
+
+/**
+ * Saca el motivo real que mandó el servidor (campo "message" del JSON de error).
+ * Si no hay, devuelve el mensaje por defecto. Así la app muestra el porqué exacto.
+ */
+fun HttpException.mensajeServidor(porDefecto: String): String = try {
+    val cuerpo = response()?.errorBody()?.string()
+    if (!cuerpo.isNullOrBlank()) {
+        val obj = com.google.gson.JsonParser.parseString(cuerpo).asJsonObject
+        val msg = if (obj.has("message") && !obj.get("message").isJsonNull) obj.get("message").asString else null
+        if (!msg.isNullOrBlank() && !msg.equals("No message available", true)) msg else porDefecto
+    } else porDefecto
+} catch (_: Exception) { porDefecto }
 
 /** Token temporal en memoria; se pierde al cerrar completamente la aplicación. */
 object SesionRemota {

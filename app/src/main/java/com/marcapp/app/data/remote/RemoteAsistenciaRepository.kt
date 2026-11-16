@@ -45,9 +45,10 @@ class RemoteAsistenciaRepository(private val api: BackendApi = MarcAppHttp.api) 
             cargar(usuario)
             "${tipo.titulo} guardada correctamente en Supabase (${confirmada.fechaHora.replace('T',' ')})."
         } catch (e: HttpException) {
-            errorHttp(e)
+            // Mostramos el motivo EXACTO del servidor (geocerca, horario, duplicado…); si no, uno genérico.
+            e.mensajeServidor(errorHttp(e))
         } catch (_: Exception) {
-            "No se pudo confirmar la marcación. Comprueba tu historial antes de reintentar."
+            "No se pudo confirmar la marcación. Comprueba tu conexión e inténtalo de nuevo."
         }
     }
 
