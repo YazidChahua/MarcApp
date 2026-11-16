@@ -7,7 +7,6 @@ import android.location.Location
 import android.os.Looper
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -27,6 +26,8 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.marcapp.app.core.designsystem.MarcAppColors as C
 import com.marcapp.app.core.ui.Tarjeta
+import com.marcapp.app.data.remote.MarcAppHttp
+import com.marcapp.app.data.remote.SesionRemota
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -36,33 +37,42 @@ import org.osmdroid.views.overlay.Polygon
 
 /**
  * Mapa real (OpenStreetMap) que muestra:
- *  - Dónde está parado el trabajador en este momento (se actualiza solo).
- *  - El área de marcación (círculo) y a cuántos metros está de ella.
+ *  - El lugar de trabajo (geocerca) que el ADMINISTRADOR definió en el panel web.
+ *    Se lee del backend (GET /api/marcapp/geocerca); si el admin lo cambia, aquí se ve.
+ *  - Dónde está parado el trabajador ahora mismo (se actualiza solo).
+ *  - La distancia en vivo entre el trabajador y el lugar de trabajo, y si está dentro o fuera.
  *
- * NOTA TEMPORAL: el centro del área se toma de la primera ubicación capturada
- * y se guarda en el teléfono. Más adelante esto lo definirá el administrador
- * desde el panel web; cuando eso exista, se reemplaza [leerCentro]/[guardarCentro].
+ * Si no hay sesión/conexión (p. ej. modo demo), usa como centro la primera ubicación capturada.
  */
 @SuppressLint("MissingPermission")
 @Composable
-fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
+fun MapaMarcacion(modifier: Modifier = Modifier, radioPorDefecto: Int = 150) {
     val contexto = LocalContext.current
-    val prefs = remember { contexto.getSharedPreferences("marcapp_mapa", Context.MODE_PRIVATE) }
 
-    fun leerCentro(): GeoPoint? = prefs.getString("centro", null)?.split(",")?.let {
-        runCatching { GeoPoint(it[0].toDouble(), it[1].toDouble()) }.getOrNull()
-    }
-    fun guardarCentro(p: GeoPoint) {
-        prefs.edit().putString("centro", "${p.latitude},${p.longitude}").apply()
-    }
-
-    var centro by remember { mutableStateOf(leerCentro()) }
+    var sede by remember { mutableStateOf<GeoPoint?>(null) }
+    var radio by remember { mutableIntStateOf(radioPorDefecto) }
+    var nombreSede by remember { mutableStateOf<String?>(null) }
+    var esRespaldoLocal by remember { mutableStateOf(false) }
     var usuario by remember { mutableStateOf<GeoPoint?>(null) }
     var distancia by remember { mutableStateOf<Float?>(null) }
     val yaCentrado = remember { mutableStateOf(false) }
 
+    // 1) Traer el lugar de trabajo definido en el panel (backend).
+    LaunchedEffect(Unit) {
+        val bearer = SesionRemota.bearer()
+        if (bearer != null) {
+            try {
+                val g = MarcAppHttp.api.geocerca(bearer)
+                sede = GeoPoint(g.latitud, g.longitud)
+                radio = if (g.radioMetros > 0) g.radioMetros else radioPorDefecto
+                nombreSede = g.nombre
+            } catch (_: Exception) {
+                // Sin conexión o sesión: se usará la ubicación del teléfono como respaldo.
+            }
+        }
+    }
+
     val mapa = remember {
-        // osmdroid se inicializa una sola vez antes de crear el mapa.
         Configuration.getInstance().apply {
             load(contexto, contexto.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
             userAgentValue = contexto.packageName
@@ -74,13 +84,12 @@ fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
         }
     }
 
-    // Ciclo de vida del mapa.
     DisposableEffect(Unit) {
         mapa.onResume()
         onDispose { mapa.onPause(); mapa.onDetach() }
     }
 
-    // Lectura de ubicación en vivo.
+    // 2) Ubicación del trabajador en vivo + distancia al lugar de trabajo.
     DisposableEffect(Unit) {
         val cliente = LocationServices.getFusedLocationProviderClient(contexto)
         val solicitud = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L).build()
@@ -89,8 +98,9 @@ fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
                 val loc = resultado.lastLocation ?: return
                 val punto = GeoPoint(loc.latitude, loc.longitude)
                 usuario = punto
-                if (centro == null) { guardarCentro(punto); centro = punto }
-                centro?.let { c ->
+                // Si el backend no dio el centro, usa la primera ubicación como respaldo.
+                if (sede == null) { sede = punto; esRespaldoLocal = true }
+                sede?.let { c ->
                     val salida = FloatArray(1)
                     Location.distanceBetween(loc.latitude, loc.longitude, c.latitude, c.longitude, salida)
                     distancia = salida[0]
@@ -103,22 +113,25 @@ fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
         onDispose { cliente.removeLocationUpdates(callback) }
     }
 
-    val dentro = distancia != null && distancia!! <= radioMetros
+    val dentro = distancia != null && distancia!! <= radio
 
     Tarjeta(modifier) {
-        Text("Tu ubicación y el área de marcación", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = C.Texto)
+        Text(
+            if (nombreSede.isNullOrBlank()) "Tu ubicación y el área de marcación" else "Lugar de trabajo: ${nombreSede}",
+            fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = C.Texto
+        )
 
         AndroidView(
             factory = { mapa },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(300.dp)
+                .height(320.dp)
                 .clip(RoundedCornerShape(14.dp)),
             update = { mv ->
                 mv.overlays.clear()
-                centro?.let { c ->
+                sede?.let { c ->
                     mv.overlays.add(Polygon(mv).apply {
-                        points = Polygon.pointsAsCircle(c, radioMetros.toDouble())
+                        points = Polygon.pointsAsCircle(c, radio.toDouble())
                         fillPaint.color = AColor.argb(40, 25, 190, 134)
                         outlinePaint.color = AColor.rgb(25, 190, 134)
                         outlinePaint.strokeWidth = 5f
@@ -126,7 +139,7 @@ fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
                     mv.overlays.add(Marker(mv).apply {
                         position = c
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        title = "Área de marcación"
+                        title = "Lugar de trabajo"
                     })
                 }
                 usuario?.let { u ->
@@ -136,7 +149,7 @@ fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
                         title = "Estás aquí"
                     })
                 }
-                val foco = usuario ?: centro
+                val foco = sede ?: usuario
                 if (!yaCentrado.value && foco != null) {
                     mv.controller.setCenter(foco)
                     yaCentrado.value = true
@@ -150,7 +163,7 @@ fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "Estás a ${distancia!!.toInt()} m del área de marcación",
+                    "Estás a ${formatearDistancia(distancia!!)} del lugar de trabajo",
                     fontSize = 13.sp, color = C.Texto, fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
@@ -166,6 +179,16 @@ fun MapaMarcacion(radioMetros: Int = 150, modifier: Modifier = Modifier) {
                     )
                 }
             }
+            if (esRespaldoLocal) {
+                Text(
+                    "Mostrando una ubicación de referencia; al conectarse se usará el lugar que fijó el administrador.",
+                    fontSize = 11.sp, color = C.Secundario
+                )
+            }
         }
     }
 }
+
+/** Metros si es cerca, kilómetros si está lejos. */
+private fun formatearDistancia(metros: Float): String =
+    if (metros >= 1000f) String.format("%.1f km", metros / 1000f) else "${metros.toInt()} m"

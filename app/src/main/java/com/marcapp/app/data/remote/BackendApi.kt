@@ -19,6 +19,16 @@ data class PerfilResponse(val idUsuario: Int, val nombre: String, val correo: St
 data class MarcaRequest(val tipo: String, val latitud: Double, val longitud: Double)
 data class MarcaResponse(val tipo: String, val fechaHora: String, val estado: String)
 
+/** Geocerca (lugar de trabajo) que el administrador define en el panel web. */
+data class GeocercaResponse(
+    val nombre: String?,
+    val direccion: String?,
+    val latitud: Double,
+    val longitud: Double,
+    val radioMetros: Int,
+    val precisionMaxMetros: Int
+)
+
 interface BackendApi {
     @POST("api/auth/login/colaborador")
     suspend fun loginTrabajador(@Body request: LoginRequest): LoginResponse
@@ -34,6 +44,9 @@ interface BackendApi {
 
     @POST("api/marcapp/marcaciones")
     suspend fun marcar(@Header("Authorization") bearer: String, @Body marca: MarcaRequest): MarcaResponse
+
+    @GET("api/marcapp/geocerca")
+    suspend fun geocerca(@Header("Authorization") bearer: String): GeocercaResponse
 }
 
 /** Token temporal en memoria; se pierde al cerrar completamente la aplicación. */
