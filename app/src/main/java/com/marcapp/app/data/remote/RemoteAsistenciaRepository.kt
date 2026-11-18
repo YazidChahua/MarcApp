@@ -52,6 +52,27 @@ class RemoteAsistenciaRepository(private val api: BackendApi = MarcAppHttp.api) 
         }
     }
 
+    override suspend fun horarioHoy(usuario: Usuario): HorarioTurno? {
+        if (usuario.esDemo) return demo.horarioHoy(usuario)
+        val auth = SesionRemota.bearer() ?: return null
+        return try {
+            val t = api.miTurno(auth)
+            HorarioTurno(
+                tieneTurno = t.tieneTurno,
+                trabajaHoy = t.trabajaHoy,
+                nombreTurno = t.nombreTurno,
+                horaIngreso = t.horaIngreso,
+                inicioRefrigerio = t.inicioRefrigerio,
+                finRefrigerio = t.finRefrigerio,
+                horaSalida = t.horaSalida,
+                minutosAntes = t.minutosAntes
+            )
+        } catch (_: Exception) {
+            // Backend sin el endpoint todavía, sin red o sesión expirada: no se programan avisos.
+            null
+        }
+    }
+
     private fun MarcaResponse.aMarcacion(): Marcacion? = try {
         Marcacion(TipoMarca.valueOf(tipo), LocalDateTime.parse(fechaHora), estado)
     } catch (_: Exception) { null }

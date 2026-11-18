@@ -56,12 +56,23 @@ fun MarcAppRoot(sesion: SessionViewModel, asistencia: AttendanceViewModel, gesti
     LaunchedEffect(usuario) {
         if (usuario != null) {
             asistencia.cargar(usuario!!)
+            // Baja el turno de hoy y agenda los recordatorios/mensajes de ánimo del trabajador.
+            asistencia.configurarNotificaciones(contexto.applicationContext, usuario!!)
             val concedido = ContextCompat.checkSelfPermission(
                 contexto, Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
             if (!concedido) permisoUbicacion.launch(
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
             )
+        }
+    }
+
+    // Cada vez que cambian las marcaciones (p.ej. tras marcar), se actualiza el estado que usan
+    // las notificaciones para decidir entre felicitar o recordar a la hora del evento.
+    val marcaciones by asistencia.marcaciones.collectAsState()
+    LaunchedEffect(marcaciones, usuario) {
+        if (usuario?.rol == Rol.TRABAJADOR) {
+            asistencia.sincronizarMarcasNotificaciones(contexto.applicationContext)
         }
     }
     Surface(Modifier.fillMaxSize(), color = Color.White) {

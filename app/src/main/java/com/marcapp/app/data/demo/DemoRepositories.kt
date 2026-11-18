@@ -31,6 +31,25 @@ class DemoAsistenciaRepository : AsistenciaRepository {
         eventos.value = listOf(Marcacion(tipo, LocalDateTime.now())) + eventos.value
         return "${tipo.titulo} registrada en modo DEMO. No se envió al servidor."
     }
+
+    /**
+     * Horario DEMO con eventos a pocos minutos de AHORA, para poder ver las notificaciones
+     * dispararse durante una prueba (en producción las horas vienen del turno real del backend).
+     */
+    override suspend fun horarioHoy(usuario: Usuario): HorarioTurno {
+        val f = DateTimeFormatter.ofPattern("HH:mm")
+        val ahora = java.time.LocalTime.now()
+        return HorarioTurno(
+            tieneTurno = true,
+            trabajaHoy = true,
+            nombreTurno = "Turno demo",
+            horaIngreso = ahora.plusMinutes(1).format(f),
+            inicioRefrigerio = ahora.plusMinutes(2).format(f),
+            finRefrigerio = ahora.plusMinutes(3).format(f),
+            horaSalida = ahora.plusMinutes(4).format(f),
+            minutosAntes = 10
+        )
+    }
 }
 
 class DemoGestionRepository : GestionRepository {

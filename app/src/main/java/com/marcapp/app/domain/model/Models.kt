@@ -35,6 +35,22 @@ data class Trabajador(val id: Int, val nombre: String, val cargo: String, val co
 
 data class Turno(val id: Int, val nombre: String, val inicio: String, val fin: String)
 
+/**
+ * Horario del turno vigente del trabajador para HOY (lo entrega el backend en /api/marcapp/mi-turno).
+ * La app lo usa para programar las notificaciones locales. Las horas vienen como "HH:mm" o null.
+ * [minutosAntes] es el aviso de anticipación que configura el administrador en el panel.
+ */
+data class HorarioTurno(
+    val tieneTurno: Boolean,
+    val trabajaHoy: Boolean,
+    val nombreTurno: String?,
+    val horaIngreso: String?,
+    val inicioRefrigerio: String?,
+    val finRefrigerio: String?,
+    val horaSalida: String?,
+    val minutosAntes: Int
+)
+
 data class Feriado(val id: Int, val fecha: String, val descripcion: String)
 
 data class Auditoria(val fecha: String, val mensaje: String)

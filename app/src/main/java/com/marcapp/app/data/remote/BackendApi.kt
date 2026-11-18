@@ -29,6 +29,18 @@ data class GeocercaResponse(
     val precisionMaxMetros: Int
 )
 
+/** Horario del turno del trabajador para HOY (para programar notificaciones locales). */
+data class MiTurnoResponse(
+    val tieneTurno: Boolean = false,
+    val trabajaHoy: Boolean = false,
+    val nombreTurno: String? = null,
+    val horaIngreso: String? = null,
+    val inicioRefrigerio: String? = null,
+    val finRefrigerio: String? = null,
+    val horaSalida: String? = null,
+    val minutosAntes: Int = 10
+)
+
 /** Justificación que el trabajador envía desde la app. */
 data class JustificacionRequest(val fecha: String, val tipo: String, val mensaje: String)
 
@@ -56,6 +68,9 @@ interface BackendApi {
 
     @GET("api/marcapp/me")
     suspend fun perfil(@Header("Authorization") bearer: String): PerfilResponse
+
+    @GET("api/marcapp/mi-turno")
+    suspend fun miTurno(@Header("Authorization") bearer: String): MiTurnoResponse
 
     @GET("api/marcapp/marcaciones")
     suspend fun historial(@Header("Authorization") bearer: String, @Query("dias") dias: Int = 7): List<MarcaResponse>

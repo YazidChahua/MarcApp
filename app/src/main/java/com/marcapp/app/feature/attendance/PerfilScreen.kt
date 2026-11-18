@@ -1,12 +1,15 @@
 package com.marcapp.app.feature.attendance
 
+import android.Manifest
 import android.content.Context
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -14,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,8 +29,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.marcapp.app.core.designsystem.MarcAppColors as C
+import com.marcapp.app.core.notifications.MarcAppNotificaciones
+import com.marcapp.app.core.notifications.ProgramadorNotificaciones
 import com.marcapp.app.core.ui.*
 import com.marcapp.app.domain.model.*
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -105,6 +113,11 @@ fun PerfilScreen(usuario: Usuario, onCambiarCorreo: (String) -> Unit, salir: () 
             }
         }
 
+        // ---- Notificaciones (solo colaboradores) ----
+        if (usuario.rol == Rol.TRABAJADOR) {
+            TarjetaNotificaciones(contexto)
+        }
+
         aviso?.let { Aviso(it) }
 
         BotonPrincipal("Cerrar sesión", salir, Modifier.fillMaxWidth())
@@ -122,6 +135,108 @@ fun PerfilScreen(usuario: Usuario, onCambiarCorreo: (String) -> Unit, salir: () 
             onCerrar = { mostrarCambioCorreo = false }
         )
     }
+}
+
+/** Opciones de "aviso para alistarte": minutos antes de la entrada (0 = desactivado). */
+private val OPCIONES_ALISTARSE = listOf(0, 15, 30, 45, 60, 90)
+
+/**
+ * Configuración de notificaciones que el trabajador controla desde su perfil.
+ * Puede encender/apagar los avisos y elegir con cuánta anticipación quiere el aviso para
+ * alistarse antes de su entrada. Los recordatorios del sistema (minutos antes de cada evento,
+ * que define el administrador) y los mensajes de ánimo a la hora exacta son automáticos.
+ */
+@Composable
+private fun TarjetaNotificaciones(contexto: Context) {
+    var activadas by remember {
+        mutableStateOf(
+            ProgramadorNotificaciones.estanActivadas(contexto) && MarcAppNotificaciones.permisoConcedido(contexto)
+        )
+    }
+    var alistarse by remember { mutableStateOf(ProgramadorNotificaciones.minutosAlistarse(contexto)) }
+    val horaIngreso = remember { ProgramadorNotificaciones.horaIngresoGuardada(contexto) }
+    val tieneTurno = remember { ProgramadorNotificaciones.tieneTurno(contexto) }
+    val minAntesAdmin = remember { ProgramadorNotificaciones.minutosAntes(contexto) }
+
+    // Permiso de notificaciones (Android 13+). Al concederlo, se activan de verdad.
+    val pedirPermiso = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+        if (concedido) { ProgramadorNotificaciones.setActivadas(contexto, true); activadas = true }
+        else activadas = false
+    }
+
+    fun activar() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !MarcAppNotificaciones.permisoConcedido(contexto)) {
+            pedirPermiso.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            ProgramadorNotificaciones.setActivadas(contexto, true); activadas = true
+        }
+    }
+
+    Tarjeta {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Notifications, null, tint = C.VerdeOscuro, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Notificaciones", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = C.Texto)
+        }
+        Separador()
+
+        // Interruptor maestro
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Recibir notificaciones", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = C.Texto)
+                Text("Recordatorios para marcar y mensajes de ánimo durante tu jornada.",
+                    fontSize = 12.sp, color = C.Secundario)
+            }
+            Switch(checked = activadas, onCheckedChange = { marcar ->
+                if (marcar) activar()
+                else { ProgramadorNotificaciones.setActivadas(contexto, false); activadas = false }
+            })
+        }
+
+        if (activadas) {
+            Separador()
+            Text("Aviso para alistarte", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Texto)
+            Text("Un aviso extra antes de tu entrada para que te prepares con calma.",
+                fontSize = 12.sp, color = C.Secundario)
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OPCIONES_ALISTARSE.forEach { min ->
+                    FilterChip(
+                        selected = alistarse == min,
+                        onClick = { ProgramadorNotificaciones.setMinutosAlistarse(contexto, min); alistarse = min },
+                        label = { Text(if (min == 0) "No" else "$min min") }
+                    )
+                }
+            }
+            // Si conocemos la hora de entrada, mostramos a qué hora llegaría el aviso.
+            val horaAviso = calcularHoraAviso(horaIngreso, alistarse)
+            if (alistarse > 0 && horaAviso != null) {
+                Spacer(Modifier.height(6.dp))
+                Text("Te avisaremos cerca de las $horaAviso.", fontSize = 12.sp, color = C.VerdeOscuro)
+            }
+
+            Separador()
+            val detalle = buildString {
+                append("Automático: aviso $minAntesAdmin min antes de cada evento (lo define tu empresa) ")
+                append("y un mensaje a la hora de tu entrada, refrigerio y salida.")
+            }
+            Text(detalle, fontSize = 12.sp, color = C.Secundario)
+            if (!tieneTurno) {
+                Spacer(Modifier.height(6.dp))
+                Text("Aún no tienes un turno asignado. Cuando tu administrador te lo asigne, los avisos se activan solos.",
+                    fontSize = 12.sp, color = C.Amarillo)
+            }
+        }
+    }
+}
+
+/** Devuelve "HH:mm" del aviso para alistarse (entrada menos los minutos elegidos), o null. */
+private fun calcularHoraAviso(horaIngreso: String?, minutosAntes: Int): String? {
+    if (horaIngreso.isNullOrBlank() || minutosAntes <= 0) return null
+    return try {
+        val f = DateTimeFormatter.ofPattern("HH:mm")
+        LocalTime.parse(horaIngreso, f).minusMinutes(minutosAntes.toLong()).format(f)
+    } catch (_: Exception) { null }
 }
 
 /**

@@ -1,7 +1,9 @@
 package com.marcapp.app.feature.attendance
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.marcapp.app.core.notifications.ProgramadorNotificaciones
 import com.marcapp.app.domain.model.*
 import com.marcapp.app.domain.repository.AsistenciaRepository
 import com.marcapp.app.domain.usecase.RegistrarMarcacionUseCase
@@ -34,4 +36,22 @@ class AttendanceViewModel(private val repository: AsistenciaRepository) : ViewMo
         }
     }
     fun limpiarMensaje() { mensajeMutable.value = null }
+
+    /**
+     * Baja el turno de hoy del backend y agenda las notificaciones locales del trabajador.
+     * Se llama al iniciar sesión. Usa el contexto de aplicación (no retiene el de la Activity).
+     */
+    fun configurarNotificaciones(appContext: Context, usuario: Usuario) {
+        if (usuario.rol != Rol.TRABAJADOR) return
+        viewModelScope.launch {
+            val horario = repository.horarioHoy(usuario)
+            if (horario != null) ProgramadorNotificaciones.guardarHorario(appContext, horario)
+            ProgramadorNotificaciones.sincronizarMarcas(appContext, marcaciones.value)
+        }
+    }
+
+    /** Refleja en las notificaciones qué marcó hoy el trabajador (ánimo vs recordatorio). */
+    fun sincronizarMarcasNotificaciones(appContext: Context) {
+        ProgramadorNotificaciones.sincronizarMarcas(appContext, marcaciones.value)
+    }
 }

@@ -18,6 +18,8 @@ interface AsistenciaRepository {
     val marcaciones: StateFlow<List<Marcacion>>
     suspend fun cargar(usuario: Usuario): String? = null
     suspend fun marcar(tipo: TipoMarca, usuario: Usuario, latitud: Double? = null, longitud: Double? = null): String
+    /** Horario del turno de hoy para programar notificaciones; null si no se pudo obtener. */
+    suspend fun horarioHoy(usuario: Usuario): HorarioTurno? = null
 }
 
 interface GestionRepository {
