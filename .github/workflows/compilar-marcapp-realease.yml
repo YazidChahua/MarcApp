@@ -38,22 +38,23 @@ jobs:
           test -f ./gradle/wrapper/gradle-wrapper.jar || { echo "Falta gradle/wrapper/gradle-wrapper.jar"; exit 1; }
           chmod +x ./gradlew
 
-      - name: Compilar APK Release (sin firmar)
+      - name: Compilar APK Release
         run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
-      - name: Firmar APK Release para que sea instalable
-        uses: r0adkll/sign-android-release@v1
-        id: sign_app
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
+      - name: Crear llave y firmar APK Release
+        run: |
+          keytool -genkey -v -keystore release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias marcapp -storepass 123456 -keypass 123456 -dname "CN=MarcApp, OU=UTP, O=UTP, L=Lima, ST=Lima, C=PE"
+          UNSIGNED_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          BUILD_TOOLS_DIR=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          "$BUILD_TOOLS_DIR/zipalign" -v -p 4 "$UNSIGNED_APK" app-aligned.apk
+          "$BUILD_TOOLS_DIR/apksigner" sign --ks release.jks --ks-key-alias marcapp --ks-pass pass:123456 --key-pass pass:123456 --out MarcApp-release.apk app-aligned.apk
 
-      - name: Publicar Release en GitHub automaticamente
+      - name: Publicar Release en GitHub
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: MarcApp v1.0.${{ github.run_number }}
-          files: ${{ steps.sign_app.outputs.signedReleaseFile }}
+          body: |
+            ## MarcApp v1.0.${{ github.run_number }}
+            Aplicación móvil Android para el registro y control de asistencia laboral de trabajadores.
+          files: MarcApp-release.apk
