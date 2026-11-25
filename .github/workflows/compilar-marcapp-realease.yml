@@ -1,0 +1,59 @@
+name: Compilar MarcApp APK Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  compilar:
+    name: Compilar APK Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar el codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Preparar Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Instalar Android API 37
+        run: sdkmanager "platforms;android-37.0" "build-tools;36.0.0"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Comprobar Gradle Wrapper
+        run: |
+          test -f ./gradlew || { echo "Falta gradlew en la raiz del proyecto"; exit 1; }
+          test -f ./gradle/wrapper/gradle-wrapper.jar || { echo "Falta gradle/wrapper/gradle-wrapper.jar"; exit 1; }
+          chmod +x ./gradlew
+
+      - name: Compilar APK Release (sin firmar)
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Firmar APK Release para que sea instalable
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Publicar Release en GitHub automaticamente
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: MarcApp v1.0.${{ github.run_number }}
+          files: ${{ steps.sign_app.outputs.signedReleaseFile }}
